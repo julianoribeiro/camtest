@@ -1,0 +1,11 @@
+{
+    "files.associations": {
+        "who_lcd.h": "c",
+        "screen_driver.h": "c",
+        "scr_interface_driver.h": "c",
+        "screen_utility.h": "c",
+        "interface_drv_def.h": "c",
+        "stdio.h": "c",
+        "string_view": "c"
+    }
+}
