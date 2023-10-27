@@ -6,6 +6,7 @@
 #include "esp_lcd_panel_ops.h"
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
+#include "logo_en_240x240_lcd.h"
 
 #define CAM_MODULE_NAME "ESP-S3-EYE"
 #define CAM_PIN_PWDN -1
@@ -77,6 +78,8 @@ static camera_config_t camera_config = {
     .grab_mode = CAMERA_GRAB_LATEST //CAMERA_GRAB_WHEN_EMPTY or CAMERA_GRAB_LATEST. Sets when buffers should be filled
 };
 
+scr_driver_t lcd;
+
 esp_err_t camera_init(){
     //power up the camera if PWDN pin is defined
     if(CAM_PIN_PWDN != -1){
@@ -128,7 +131,7 @@ esp_err_t lcd_init() {
     printf("Interface fim\n");
 
     printf("Driver inicio\n");
-    if (ESP_OK != scr_find_driver(SCREEN_CONTROLLER_ILI9341, &lcd)) { 
+    if (ESP_OK != scr_find_driver(SCREEN_CONTROLLER_ST7789, &lcd)) { 
         printf("Falha ao carregar o driver\n");
     };
     printf("Driver Fim\n");
@@ -160,7 +163,12 @@ esp_err_t camera_capture(){
     }
     //replace this with your own function
     printf("W: %d, H: %d, F: %d\n", fb->width, fb->height, fb->format);
-  
+
+    uint16_t *pixels = (uint16_t *)heap_caps_malloc((logo_en_240x240_lcd_width * logo_en_240x240_lcd_height) * sizeof(uint16_t), MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
+    memcpy(pixels, logo_en_240x240_lcd, (logo_en_240x240_lcd_width * logo_en_240x240_lcd_height) * sizeof(uint16_t));
+    lcd.draw_bitmap(0, 0, logo_en_240x240_lcd_width, logo_en_240x240_lcd_height, (uint16_t *)pixels);
+    heap_caps_free(pixels);
+    
     //return the frame buffer back to the driver for reuse
     esp_camera_fb_return(fb);
     return ESP_OK;
@@ -169,13 +177,13 @@ esp_err_t camera_capture(){
 void setup() {
   delay(3000);
   Serial.begin(115200);
+  printf("Init LCD\n");
+  lcd_init();
   printf("Camera Init\n");
   camera_init();
   delay(1000);
   printf("Camera Capture\n");
   camera_capture();
-  printf("Init LCD\n");
-  lcd_init();
   delay(30000);
   printf("End\n");
 }

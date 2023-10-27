@@ -27,6 +27,8 @@ static const char *TAG = "screen driver";
 /**
  * Define screen instance
  */
+#define CONFIG_LCD_DRIVER_SCREEN_CONTROLLER_ST7789 1
+
 /**< Colorful screen */
 #ifdef CONFIG_LCD_DRIVER_SCREEN_CONTROLLER_ILI9341
 extern scr_driver_t lcd_ili9341_default_driver;
