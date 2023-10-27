@@ -164,18 +164,20 @@ esp_err_t camera_capture(){
     //replace this with your own function
     printf("W: %d, H: %d, F: %d\n", fb->width, fb->height, fb->format);
 
-    uint16_t *pixels = (uint16_t *)heap_caps_malloc((logo_en_240x240_lcd_width * logo_en_240x240_lcd_height) * sizeof(uint16_t), MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
-    memcpy(pixels, logo_en_240x240_lcd, (logo_en_240x240_lcd_width * logo_en_240x240_lcd_height) * sizeof(uint16_t));
-    lcd.draw_bitmap(0, 0, logo_en_240x240_lcd_width, logo_en_240x240_lcd_height, (uint16_t *)pixels);
-    heap_caps_free(pixels);
-    
     //return the frame buffer back to the driver for reuse
     esp_camera_fb_return(fb);
     return ESP_OK;
 }
 
+void draw_something() {
+    uint16_t *pixels = (uint16_t *)heap_caps_malloc((logo_en_240x240_lcd_width * logo_en_240x240_lcd_height) * sizeof(uint16_t), MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
+    memcpy(pixels, logo_en_240x240_lcd, (logo_en_240x240_lcd_width * logo_en_240x240_lcd_height) * sizeof(uint16_t));
+    lcd.draw_bitmap(0, 0, logo_en_240x240_lcd_width, logo_en_240x240_lcd_height, (uint16_t *)pixels);
+    heap_caps_free(pixels);
+}
+
 void setup() {
-  delay(3000);
+  delay(1000);
   Serial.begin(115200);
   printf("Init LCD\n");
   lcd_init();
@@ -184,7 +186,9 @@ void setup() {
   delay(1000);
   printf("Camera Capture\n");
   camera_capture();
-  delay(30000);
+  delay(1000);
+  draw_something();
+  delay(1000);
   printf("End\n");
 }
 
