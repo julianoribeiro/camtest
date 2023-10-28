@@ -7,5 +7,7 @@
         "interface_drv_def.h": "c",
         "stdio.h": "c",
         "string_view": "c"
-    }
+    },
+    "idf.port": "/dev/cu.usbmodem114201",
+    "idf.adapterTargetName": "esp32s3"
 }

@@ -37,7 +37,7 @@
 #define BOARD_LCD_DC 43
 #define BOARD_LCD_RST -1
 #define BOARD_LCD_BL 48
-#define BOARD_LCD_PIXEL_CLOCK_HZ (40 * 1000 * 1000)
+#define BOARD_LCD_PIXEL_CLOCK_HZ (20 * 1000 * 1000)
 #define BOARD_LCD_BK_LIGHT_ON_LEVEL 0
 #define BOARD_LCD_BK_LIGHT_OFF_LEVEL !BOARD_LCD_BK_LIGHT_ON_LEVEL
 #define BOARD_LCD_H_RES 240
@@ -65,31 +65,25 @@ static camera_config_t camera_config = {
     .pin_href = CAM_PIN_HREF,
     .pin_pclk = CAM_PIN_PCLK,
 
-    .xclk_freq_hz = 20000000,//EXPERIMENTAL: Set to 16MHz on ESP32-S2 or ESP32-S3 to enable EDMA mode
+    .xclk_freq_hz = 40000000,//EXPERIMENTAL: Set to 16MHz on ESP32-S2 or ESP32-S3 to enable EDMA mode
     .ledc_timer = LEDC_TIMER_0,
     .ledc_channel = LEDC_CHANNEL_0,
 
     .pixel_format = PIXFORMAT_JPEG,//YUV422,GRAYSCALE,RGB565,JPEG
-    .frame_size = FRAMESIZE_SVGA,//QQVGA-UXGA, For ESP32, do not use sizes above QVGA when not JPEG. The performance of the ESP32-S series has improved a lot, but JPEG mode always gives better frame rates.
+    .frame_size = FRAMESIZE_240X240,//QQVGA-UXGA, For ESP32, do not use sizes above QVGA when not JPEG. The performance of the ESP32-S series has improved a lot, but JPEG mode always gives better frame rates.
 
-    .jpeg_quality = 30, //0-63, for OV series camera sensors, lower number means higher quality
-    .fb_count = 2, //When jpeg mode is used, if fb_count more than one, the driver will work in continuous mode.
+    .jpeg_quality = 10, //0-63, for OV series camera sensors, lower number means higher quality
+    .fb_count = 1, //When jpeg mode is used, if fb_count more than one, the driver will work in continuous mode.
     .fb_location = CAMERA_FB_IN_PSRAM,
-    .grab_mode = CAMERA_GRAB_LATEST //CAMERA_GRAB_WHEN_EMPTY or CAMERA_GRAB_LATEST. Sets when buffers should be filled
+    .grab_mode = CAMERA_GRAB_WHEN_EMPTY //CAMERA_GRAB_WHEN_EMPTY or CAMERA_GRAB_LATEST. Sets when buffers should be filled
 };
 
 scr_driver_t lcd;
-
 esp_err_t camera_init(){
     //power up the camera if PWDN pin is defined
     if(CAM_PIN_PWDN != -1){
         pinMode(CAM_PIN_PWDN, OUTPUT);
         digitalWrite(CAM_PIN_PWDN, LOW);
-    }
-    if (psramFound()){ 
-        printf("Com PSRAM\n");
-    } else {
-        printf("Sem PSRAM\n");
     }
 
     //initialize the camera
@@ -104,10 +98,8 @@ esp_err_t camera_init(){
 
 esp_err_t lcd_init() {
     
-    scr_driver_t lcd;
     scr_info_t lcd_info;
     
-    printf("Criando barramento\n");
     spi_config_t bus_conf = {
             .miso_io_num = (gpio_num_t)BOARD_LCD_MISO,
             .mosi_io_num = (gpio_num_t)BOARD_LCD_MOSI,
@@ -115,26 +107,21 @@ esp_err_t lcd_init() {
             .max_transfer_sz = 2 * 240 * 240 + 10,
         };
     spi_bus_handle_t spi_bus = spi_bus_create(SPI2_HOST, &bus_conf);
-    printf("Barramento Criado\n");
 
-    scr_interface_spi_config_t iface_cfg = {
-        .spi_bus = spi_bus,
-        .pin_num_cs = BOARD_LCD_CS,
-        .pin_num_dc = BOARD_LCD_DC,
-        .clk_freq = 40 * 1000000,
-        .swap_data = 0,
+    scr_interface_spi_config_t spi_lcd_cfg = {
+            .spi_bus = spi_bus,
+            .pin_num_cs = BOARD_LCD_CS,
+            .pin_num_dc = BOARD_LCD_DC,
+            .clk_freq = 40 * 1000000,
+            .swap_data = 0,
     };
 
-    printf("Interface inicio\n");
     scr_interface_driver_t *iface_drv;
-    scr_interface_create(SCREEN_IFACE_SPI, &iface_cfg, &iface_drv);
-    printf("Interface fim\n");
+    scr_interface_create(SCREEN_IFACE_SPI, &spi_lcd_cfg, &iface_drv);
 
-    printf("Driver inicio\n");
     if (ESP_OK != scr_find_driver(SCREEN_CONTROLLER_ST7789, &lcd)) { 
         printf("Falha ao carregar o driver\n");
     };
-    printf("Driver Fim\n");
 
     scr_controller_config_t lcd_cfg = {
         .interface_drv = iface_drv,
@@ -146,12 +133,16 @@ esp_err_t lcd_init() {
         .height = 240,
         .offset_hor = 0,
         .offset_ver = 0,
-        .rotate = (scr_dir_t)0,
+        .rotate = (scr_dir_t)0
     };    
     lcd.init(&lcd_cfg);
+    if (ESP_FAIL == lcd.init(&lcd_cfg)) {
+        printf("screen initialize fail\n\n");
+    }
 
+    lcd.get_info(&lcd_info);
+    printf("Screen name:%s | width:%d | height:%d\n", lcd_info.name, lcd_info.width, lcd_info.height);
     return ESP_OK;
-    // TEST_ASSERT(ESP_OK == lcd.get_info(&lcd_info));
 }
 
 esp_err_t camera_capture(){
@@ -164,12 +155,17 @@ esp_err_t camera_capture(){
     //replace this with your own function
     printf("W: %d, H: %d, F: %d\n", fb->width, fb->height, fb->format);
 
+    uint16_t *pixels = (uint16_t *)heap_caps_malloc((240 * 240) * sizeof(uint16_t), MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
+    memcpy(pixels, fb->buf, (240 * 240) * sizeof(uint16_t));
+    lcd.draw_bitmap(0, 0, 240, 240, (uint16_t *)pixels);
+
     //return the frame buffer back to the driver for reuse
     esp_camera_fb_return(fb);
     return ESP_OK;
 }
 
-void draw_something() {
+void draw_logo_espressif() {
+    printf("desenho da logo espressif\n");
     uint16_t *pixels = (uint16_t *)heap_caps_malloc((logo_en_240x240_lcd_width * logo_en_240x240_lcd_height) * sizeof(uint16_t), MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
     memcpy(pixels, logo_en_240x240_lcd, (logo_en_240x240_lcd_width * logo_en_240x240_lcd_height) * sizeof(uint16_t));
     lcd.draw_bitmap(0, 0, logo_en_240x240_lcd_width, logo_en_240x240_lcd_height, (uint16_t *)pixels);
@@ -177,20 +173,20 @@ void draw_something() {
 }
 
 void setup() {
-  delay(1000);
-  Serial.begin(115200);
-  printf("Init LCD\n");
-  lcd_init();
-  printf("Camera Init\n");
-  camera_init();
-  delay(1000);
-  printf("Camera Capture\n");
-  camera_capture();
-  delay(1000);
-  draw_something();
-  delay(1000);
-  printf("End\n");
+    delay(1000);
+    Serial.begin(115200);
+    printf("Init LCD\n");
+    lcd_init();
+    printf("Camera Init\n");
+    camera_init();
+    delay(1000);
+    
+    printf("End\n");
 }
 
 void loop() {
+    camera_capture();
+    delay(2000);
+    draw_logo_espressif();
+    delay(2000);
 }

@@ -48,7 +48,7 @@ extern scr_driver_t lcd_nt35510_default_driver;
 #ifdef CONFIG_LCD_DRIVER_SCREEN_CONTROLLER_RM68120
 extern scr_driver_t lcd_rm68120_default_driver;
 #endif
-#ifdef CONFIG_LCD_DRIVER_SCREEN_CONTROLLER_SSD1351
+#ifdef CONFIG_LCD_DRIVER_SCREEN_CONTROLLER_SSD1351 // erro diferente
 extern scr_driver_t lcd_ssd1351_default_driver;
 #endif
 #ifdef CONFIG_LCD_DRIVER_SCREEN_CONTROLLER_SSD1963
