@@ -65,11 +65,11 @@ static camera_config_t camera_config = {
     .pin_href = CAM_PIN_HREF,
     .pin_pclk = CAM_PIN_PCLK,
 
-    .xclk_freq_hz = 40000000,//EXPERIMENTAL: Set to 16MHz on ESP32-S2 or ESP32-S3 to enable EDMA mode
+    .xclk_freq_hz = 20000000,//EXPERIMENTAL: Set to 16MHz on ESP32-S2 or ESP32-S3 to enable EDMA mode
     .ledc_timer = LEDC_TIMER_0,
     .ledc_channel = LEDC_CHANNEL_0,
 
-    .pixel_format = PIXFORMAT_JPEG,//YUV422,GRAYSCALE,RGB565,JPEG
+    .pixel_format = PIXFORMAT_RGB565,//YUV422,GRAYSCALE,RGB565,JPEG
     .frame_size = FRAMESIZE_240X240,//QQVGA-UXGA, For ESP32, do not use sizes above QVGA when not JPEG. The performance of the ESP32-S series has improved a lot, but JPEG mode always gives better frame rates.
 
     .jpeg_quality = 10, //0-63, for OV series camera sensors, lower number means higher quality
@@ -159,7 +159,6 @@ esp_err_t camera_capture(){
     memcpy(pixels, fb->buf, (240 * 240) * sizeof(uint16_t));
     lcd.draw_bitmap(0, 0, 240, 240, (uint16_t *)pixels);
 
-    //return the frame buffer back to the driver for reuse
     esp_camera_fb_return(fb);
     return ESP_OK;
 }
@@ -175,18 +174,14 @@ void draw_logo_espressif() {
 void setup() {
     delay(1000);
     Serial.begin(115200);
-    printf("Init LCD\n");
     lcd_init();
-    printf("Camera Init\n");
-    camera_init();
     delay(1000);
-    
-    printf("End\n");
+    camera_init();
 }
 
 void loop() {
     camera_capture();
-    delay(2000);
-    draw_logo_espressif();
-    delay(2000);
+    delay(100);
+    // draw_logo_espressif();
+    // delay(3000);
 }
