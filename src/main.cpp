@@ -6,7 +6,10 @@
 #include "esp_lcd_panel_ops.h"
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
-#include "logo_en_240x240_lcd.h"
+#include <SPIFFS.h>
+#include "ml.h"
+#include <SD.h>
+#include <SPI.h>
 
 #define CAM_MODULE_NAME "ESP-S3-EYE"
 #define CAM_PIN_PWDN -1
@@ -135,7 +138,7 @@ esp_err_t lcd_init() {
         .offset_ver = 0,
         .rotate = (scr_dir_t)0
     };    
-    lcd.init(&lcd_cfg);
+    // lcd.init(&lcd_cfg);
     if (ESP_FAIL == lcd.init(&lcd_cfg)) {
         printf("screen initialize fail\n\n");
     }
@@ -159,29 +162,59 @@ esp_err_t camera_capture(){
     memcpy(pixels, fb->buf, (240 * 240) * sizeof(uint16_t));
     lcd.draw_bitmap(0, 0, 240, 240, (uint16_t *)pixels);
 
+    free(pixels);
     esp_camera_fb_return(fb);
     return ESP_OK;
 }
 
-void draw_logo_espressif() {
-    printf("desenho da logo espressif\n");
-    uint16_t *pixels = (uint16_t *)heap_caps_malloc((logo_en_240x240_lcd_width * logo_en_240x240_lcd_height) * sizeof(uint16_t), MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
-    memcpy(pixels, logo_en_240x240_lcd, (logo_en_240x240_lcd_width * logo_en_240x240_lcd_height) * sizeof(uint16_t));
-    lcd.draw_bitmap(0, 0, logo_en_240x240_lcd_width, logo_en_240x240_lcd_height, (uint16_t *)pixels);
-    heap_caps_free(pixels);
+void draw_box_number() {
+    printf("desenho um quadro\n");
+
+    int x_initial = 50;
+    int y_initial = 50;
+    int box_size = 96;
+
+    for (int x = x_initial; x < x_initial + box_size; x++) {
+        lcd.draw_pixel(x, y_initial, 65535);
+        lcd.draw_pixel(x, y_initial + box_size, 65535);
+    }
+
+    for (int y = y_initial; y < y_initial + box_size; y++) {
+        lcd.draw_pixel(x_initial, y, 65535);
+        lcd.draw_pixel(x_initial + box_size, y, 65535);
+    }
+}
+
+void sdcard_init() {
+
+    
+    SPI.begin();
+    SPI.setClockDivider(SPI_CLOCK_DIV8);  // Reduz a velocidade do relógio SPI por um fator de 8
+    if (!SD.begin(5)) {  // 5 é o número do pino CS (Chip Select)
+        Serial.println("Erro ao inicializar o cartão SD!");
+        return;
+    }
+    Serial.println("Cartão SD inicializado com sucesso.");
 }
 
 void setup() {
     delay(1000);
     Serial.begin(115200);
-    lcd_init();
-    delay(1000);
+    delay(5000);
     camera_init();
+    
+    if(!SPIFFS.begin(true)){  // 'true' força a formatação se a montagem falhar
+        Serial.println("SPIFFS Mount Failed. Formatting...");
+        SPIFFS.format();
+    }   
+
+    // sdcard_init();
+    lcd_init();
+    print_available_memory();
 }
 
 void loop() {
     camera_capture();
-    delay(100);
-    // draw_logo_espressif();
-    // delay(3000);
+    draw_box_number();
+    delay(1000);
 }
