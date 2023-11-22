@@ -123,7 +123,7 @@ tflite::MicroInterpreter* initializeInterpreter(char* model_file, const tflite::
     }
     printf("Loaded...");
 
-    resolver = vgg16Resolvers(resolver);
+    resolver = leNetResolvers(resolver);
     printf("Resolvers...");
 
     tensor_arena = (uint8_t*)malloc(tensor_arena_size);
@@ -168,47 +168,30 @@ int findMaxIndex(float predictions[]) {
 }
 
 int predict(tflite::MicroInterpreter* interpreter, float* image_data, int image_size) {
+    printf("A\n");
     if (kTfLiteOk != interpreter->initialization_status()) {
         printf("Interpreter not OK\n");
         return -1;
     }
+    printf("B\n");
 
-    // Obtain pointers to the model's input and output tensors.
     TfLiteTensor* input = interpreter->input(0);
+    if (input == NULL) {
+        printf("Input nulo \n");
+    }
     TfLiteTensor* output = interpreter->output(0);
+    printf("C\n");
 
-    // printf("Input Type: %i\n", input->type);
-    // printf("Input Bytes: %i\n", input->bytes);
-    // printf("Input Quant Type: %i\n", input->quantization.type);
-    // printf("Input Dims Size: %i\n", input->dims->size);
-    // printf("Input Dims Data 0: %i\n", input->dims->data[0]);
-    // printf("Input Dims Data 1: %i\n", input->dims->data[1]);
-    // printf("Input Dims Data 2: %i\n", input->dims->data[2]);
-    // printf("Input Dims Data 3: %i\n", input->dims->data[3]);
-
-    // Run inference
     memcpy(input->data.f, image_data, image_size * sizeof(float));
+    printf("D\n");
 
     if (kTfLiteOk != interpreter->Invoke()) {
         printf("\nUnable to invoke\n");
     }
-
-    // printf("Output Type: %i\n", output->type);
-    // printf("Output Bytes: %i\n", output->bytes);
-    // printf("Output Quant Type: %i\n", output->quantization.type);    
-    // printf("Output Dims Size: %i\n", output->dims->size);
-    // printf("Output Data 0: %i\n", output->dims->data[0]);
-    // printf("Output Data 1: %i\n", output->dims->data[1]);
+    printf("E\n");
 
     int prediction = findMaxIndex(output->data.f);
-
-    // Print the predicted class
-    // printf("\nOutput:   0      1      2      3      4      5      6      7      8      9\nChance:");
-    // for (int i = 0; i < 10; i++) {
-    //     printf(" %.3f ", output->data.f[i]);
-    // }
-    // printf("\nPrediction: %d", prediction);
-    // printf("\n\n");
+    printf("F\n");
 
     return prediction;
 }

@@ -8,8 +8,11 @@
 #include "driver/gpio.h"
 #include <SPIFFS.h>
 #include "ml.h"
-#include <SD.h>
 #include <SPI.h>
+#include <dirent.h>
+#include <esp_timer.h>
+#include <io.h>
+#include "sdcard.h"
 
 #define CAM_MODULE_NAME "ESP-S3-EYE"
 #define CAM_PIN_PWDN -1
@@ -32,7 +35,7 @@
 #define CAM_PIN_D6 17
 #define CAM_PIN_D7 16
 
-
+// LCD Config
 #define BOARD_LCD_MOSI 47
 #define BOARD_LCD_MISO -1
 #define BOARD_LCD_SCK 21
@@ -48,6 +51,17 @@
 #define BOARD_LCD_CMD_BITS 8
 #define BOARD_LCD_PARAM_BITS 8
 #define LCD_HOST SPI2_HOST
+
+namespace {
+  const tflite::Model* model = nullptr;
+  tflite::MicroMutableOpResolver<10>* resolver = nullptr;
+  tflite::MicroInterpreter* interpreter = nullptr;
+  TfLiteTensor* input = nullptr;
+  TfLiteTensor* output = nullptr;
+
+  int tensor_arena_size = 256 * 1024;
+  uint8_t* tensor_arena = nullptr;
+}
 
 static camera_config_t camera_config = {
     .pin_pwdn  = CAM_PIN_PWDN,
@@ -68,7 +82,7 @@ static camera_config_t camera_config = {
     .pin_href = CAM_PIN_HREF,
     .pin_pclk = CAM_PIN_PCLK,
 
-    .xclk_freq_hz = 20000000,//EXPERIMENTAL: Set to 16MHz on ESP32-S2 or ESP32-S3 to enable EDMA mode
+    .xclk_freq_hz = 20971520,//EXPERIMENTAL: Set to 16MHz on ESP32-S2 or ESP32-S3 to enable EDMA mode
     .ledc_timer = LEDC_TIMER_0,
     .ledc_channel = LEDC_CHANNEL_0,
 
@@ -81,7 +95,8 @@ static camera_config_t camera_config = {
     .grab_mode = CAMERA_GRAB_WHEN_EMPTY //CAMERA_GRAB_WHEN_EMPTY or CAMERA_GRAB_LATEST. Sets when buffers should be filled
 };
 
-scr_driver_t lcd;
+scr_driver_t lcd; 
+
 esp_err_t camera_init(){
     //power up the camera if PWDN pin is defined
     if(CAM_PIN_PWDN != -1){
@@ -138,7 +153,7 @@ esp_err_t lcd_init() {
         .offset_ver = 0,
         .rotate = (scr_dir_t)0
     };    
-    // lcd.init(&lcd_cfg);
+
     if (ESP_FAIL == lcd.init(&lcd_cfg)) {
         printf("screen initialize fail\n\n");
     }
@@ -148,19 +163,20 @@ esp_err_t lcd_init() {
     return ESP_OK;
 }
 
-esp_err_t camera_capture(){
-    //acquire a frame
+esp_err_t camera_capture(int draw){
     camera_fb_t * fb = esp_camera_fb_get();
     if (!fb) {
         printf("Camera Capture Failed\n");
         return ESP_FAIL;
     }
-    //replace this with your own function
-    printf("W: %d, H: %d, F: %d\n", fb->width, fb->height, fb->format);
+    printf("W: %d, H: %d, Size: %d\n", fb->width, fb->height, fb->len);
 
-    uint16_t *pixels = (uint16_t *)heap_caps_malloc((240 * 240) * sizeof(uint16_t), MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
-    memcpy(pixels, fb->buf, (240 * 240) * sizeof(uint16_t));
-    lcd.draw_bitmap(0, 0, 240, 240, (uint16_t *)pixels);
+    uint16_t *pixels = (uint16_t *)heap_caps_malloc((fb->len) * sizeof(uint16_t), MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
+    memcpy(pixels, fb->buf, (fb->len) * sizeof(uint16_t));
+    if (draw == 1) {
+        printf("Imprime imagem no LCD\n");
+        lcd.draw_bitmap(0, 0, 240, 240, (uint16_t *)pixels);
+    }
 
     free(pixels);
     esp_camera_fb_return(fb);
@@ -185,36 +201,128 @@ void draw_box_number() {
     }
 }
 
-void sdcard_init() {
+void updateProgressBar(int progress, int total) {
+    const int barWidth = 80;
+    float percentage = (float)progress / total;
+    int pos = (int)(barWidth * percentage);
 
-    
-    SPI.begin();
-    SPI.setClockDivider(SPI_CLOCK_DIV8);  // Reduz a velocidade do relógio SPI por um fator de 8
-    if (!SD.begin(5)) {  // 5 é o número do pino CS (Chip Select)
-        Serial.println("Erro ao inicializar o cartão SD!");
-        return;
+    printf("[");
+    for (int i = 0; i < barWidth; i++) {
+        if (i < pos) {
+            printf("=");
+        } else {
+            printf(" ");
+        }
     }
-    Serial.println("Cartão SD inicializado com sucesso.");
+    printf("] %.2f%%\r", percentage * 100);
+    fflush(stdout);
+}
+
+void predictData() {
+  char test_dir[30] = "/spiffs/test";
+  printf("Opening test dir %s\n", test_dir);
+
+  // Open the directory
+  DIR* dir = NULL;
+  dir = opendir(test_dir);
+  if (dir == NULL) {
+    printf("Failed to open test dir\n");
+    return;
+  }
+
+  // Iterate through each entry in the directory
+  struct dirent* entry;
+  int number_of_files = 10;
+  int file_number = 0;
+  char image_file[30];
+  int lenet_image_size = 28 * 28 * 1;
+  int squeeze_image_size = 32 * 32 * 1;
+  uint8_t* image_data = (uint8_t*)malloc(lenet_image_size);
+  uint8_t* image_32_data = (uint8_t*)malloc(squeeze_image_size);
+  float* float_image_data = (float*)malloc(lenet_image_size * 4);
+  float* float_image_32_data = (float*)malloc(squeeze_image_size * 4);
+  int prediction;
+  int predictions[100] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                          0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                          0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                          0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                          0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                          0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                          0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                          0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                          0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                          0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
+  int64_t start = esp_timer_get_time();
+  printf("1 \n");  
+  while ((entry = readdir(dir)) != NULL) {
+    snprintf(image_file, 30, "%s/%s", test_dir, entry->d_name);
+    printf("\nFile: %s\n", image_file);
+    read_file_data(image_file, lenet_image_size, image_data);
+
+    // Squeeze needs 32 x 32 images
+    // resizeImage(image_data, image_32_data);
+    // preprocessImageData(image_32_data, squeeze_image_size, float_image_32_data);
+    // prediction = predict(interpreter, float_image_32_data, squeeze_image_size);
+
+    // Other models use 28 x 28 images
+    printf("2 \n");  
+    preprocessImageData(image_data, lenet_image_size, float_image_data);
+    printf("3 \n");  
+    prediction = predict(interpreter, float_image_data, lenet_image_size);
+    printf("4 \n");  
+
+    // printf("Prediction: %i\n", entry->d_name, prediction);
+    include_prediction_in_confusion_matrix(predictions, entry->d_name, prediction);
+    printf("5 \n");  
+    updateProgressBar(file_number++, number_of_files);
+    printf("6 \n");  
+  }
+
+  int64_t stop = esp_timer_get_time();
+  printf("\n\nElapsed time: %lld microseconds\n", stop - start);
+
+  print_confusion_matrix(predictions);
+
+  print_available_memory();
+
+  free(image_data);
+  free(image_32_data);
+  free(float_image_data);
+  free(float_image_32_data);
+
+  // Close the directory
+  closedir(dir);
+  printf("\nTest dir closed\n\n");
+
+  delay(60000);
 }
 
 void setup() {
     delay(1000);
     Serial.begin(115200);
-    delay(5000);
-    camera_init();
-    
-    if(!SPIFFS.begin(true)){  // 'true' força a formatação se a montagem falhar
+    if(!SPIFFS.begin(true)){  
         Serial.println("SPIFFS Mount Failed. Formatting...");
         SPIFFS.format();
     }   
 
-    // sdcard_init();
+    // Manter sequencia LCD -> Camera
     lcd_init();
+    camera_init();
+    
+    if (!init_sd_card()) {
+        printf("Falha ao carregar SDCard\n");
+    }
+
+    // char model_file[31] = "/spiffs/LeNet5.tflite";
+    // interpreter = initializeInterpreter(model_file, model, resolver, tensor_arena_size, tensor_arena);
     print_available_memory();
 }
 
 void loop() {
-    camera_capture();
-    draw_box_number();
-    delay(1000);
+    // draw_box_number();
+    camera_capture(1);
+    // delay(1000);
+    // predictData();
+    // delay(1000);
 }
