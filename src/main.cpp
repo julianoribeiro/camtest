@@ -89,10 +89,10 @@ static camera_config_t camera_config = {
     .pixel_format = PIXFORMAT_RGB565,//YUV422,GRAYSCALE,RGB565,JPEG
     .frame_size = FRAMESIZE_240X240,//QQVGA-UXGA, For ESP32, do not use sizes above QVGA when not JPEG. The performance of the ESP32-S series has improved a lot, but JPEG mode always gives better frame rates.
 
-    .jpeg_quality = 10, //0-63, for OV series camera sensors, lower number means higher quality
+    .jpeg_quality = 60, //0-63, for OV series camera sensors, lower number means higher quality
     .fb_count = 1, //When jpeg mode is used, if fb_count more than one, the driver will work in continuous mode.
     .fb_location = CAMERA_FB_IN_PSRAM,
-    .grab_mode = CAMERA_GRAB_WHEN_EMPTY //CAMERA_GRAB_WHEN_EMPTY or CAMERA_GRAB_LATEST. Sets when buffers should be filled
+    .grab_mode = CAMERA_GRAB_LATEST //CAMERA_GRAB_WHEN_EMPTY or CAMERA_GRAB_LATEST. Sets when buffers should be filled
 };
 
 scr_driver_t lcd; 
@@ -163,7 +163,7 @@ esp_err_t lcd_init() {
     return ESP_OK;
 }
 
-esp_err_t camera_capture(int draw){
+esp_err_t camera_capture(){
     camera_fb_t * fb = esp_camera_fb_get();
     if (!fb) {
         printf("Camera Capture Failed\n");
@@ -171,14 +171,16 @@ esp_err_t camera_capture(int draw){
     }
     printf("W: %d, H: %d, Size: %d\n", fb->width, fb->height, fb->len);
 
-    uint16_t *pixels = (uint16_t *)heap_caps_malloc((fb->len) * sizeof(uint16_t), MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
-    memcpy(pixels, fb->buf, (fb->len) * sizeof(uint16_t));
-    if (draw == 1) {
-        printf("Imprime imagem no LCD\n");
-        lcd.draw_bitmap(0, 0, 240, 240, (uint16_t *)pixels);
-    }
+    printf("Imprime imagem no LCD\n");
+    lcd.draw_bitmap(0, 0, fb->width, fb->height, (uint16_t*)fb->buf);
 
-    free(pixels);
+    // Método alternativo para imprimir no LCD
+    // for (int y = 0; y < fb->height; y++) {
+    //     for (int x = 0; x < fb->width; x++) {
+    //         uint16_t pixel = ((uint16_t*)fb->buf)[y * fb->width + x];
+    //         lcd.draw_pixel(x, y, pixel);
+    //     }
+    // }
     esp_camera_fb_return(fb);
     return ESP_OK;
 }
@@ -314,15 +316,15 @@ void setup() {
         printf("Falha ao carregar SDCard\n");
     }
 
-    // char model_file[31] = "/spiffs/LeNet5.tflite";
-    // interpreter = initializeInterpreter(model_file, model, resolver, tensor_arena_size, tensor_arena);
+    char model_file[31] = "/spiffs/LeNet5.tflite";
+    interpreter = initializeInterpreter(model_file, model, resolver, tensor_arena_size, tensor_arena);
     print_available_memory();
 }
 
 void loop() {
-    // draw_box_number();
-    camera_capture(1);
-    // delay(1000);
-    // predictData();
-    // delay(1000);
+    camera_capture();
+    draw_box_number();
+    delay(1000);
+    predictData();
+    delay(1000);
 }
