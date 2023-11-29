@@ -1,9 +1,6 @@
 #include <Arduino.h>
 #include "esp_camera.h"
 #include "screen_driver.h"
-#include "esp_lcd_panel_io.h"
-#include "esp_lcd_panel_vendor.h"
-#include "esp_lcd_panel_ops.h"
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
 #include <SPIFFS.h>
@@ -13,6 +10,7 @@
 #include <esp_timer.h>
 #include <io.h>
 #include "sdcard.h"
+#include "sd_defines.h"
 
 #define CAM_MODULE_NAME "ESP-S3-EYE"
 #define CAM_PIN_PWDN -1
@@ -51,6 +49,8 @@
 #define BOARD_LCD_CMD_BITS 8
 #define BOARD_LCD_PARAM_BITS 8
 #define LCD_HOST SPI2_HOST
+
+#define COR_BOX 0x001F
 
 namespace {
   const tflite::Model* model = nullptr;
@@ -92,7 +92,7 @@ static camera_config_t camera_config = {
     .jpeg_quality = 60, //0-63, for OV series camera sensors, lower number means higher quality
     .fb_count = 1, //When jpeg mode is used, if fb_count more than one, the driver will work in continuous mode.
     .fb_location = CAMERA_FB_IN_PSRAM,
-    .grab_mode = CAMERA_GRAB_LATEST //CAMERA_GRAB_WHEN_EMPTY or CAMERA_GRAB_LATEST. Sets when buffers should be filled
+    .grab_mode = CAMERA_GRAB_WHEN_EMPTY //CAMERA_GRAB_WHEN_EMPTY or CAMERA_GRAB_LATEST. Sets when buffers should be filled
 };
 
 scr_driver_t lcd; 
@@ -163,6 +163,18 @@ esp_err_t lcd_init() {
     return ESP_OK;
 }
 
+void getPictureName(int64_t numero, char resultado[11]) {
+    char str[21]; // Tamanho 21 para acomodar o valor máximo de um int64_t
+    snprintf(str, sizeof(str), "%" PRId64, numero);
+
+    int length = strlen(str);
+    if (length >= 10) {
+        strcpy(resultado, str + length - 10);
+    } else {
+        strcpy(resultado, str);
+    }
+}
+
 esp_err_t camera_capture(){
     camera_fb_t * fb = esp_camera_fb_get();
     if (!fb) {
@@ -171,16 +183,26 @@ esp_err_t camera_capture(){
     }
     printf("W: %d, H: %d, Size: %d\n", fb->width, fb->height, fb->len);
 
+    // float* float_image_data = (float*)malloc(lenet_image_size * 4);
+    // preprocessImageData((uint16_t*)fb->buf, fb->len, float_image_data);
+    // prediction = predict(interpreter, float_image_data, fb->len);
+
+    // free(float_image_data);
+    delay(1000);
+    int64_t start = esp_timer_get_time();
+
+    char filename[30] = "/";
+    char ultimos10[11];
+    getPictureName(start, ultimos10);
+    strcat(filename, ultimos10);
+    strcat(filename, ".bin");
+    writeFile(SD_MMC, filename, (char *)fb->buf);
+    printf("Arquivo gerado: %s\n", filename);
+
+
     printf("Imprime imagem no LCD\n");
     lcd.draw_bitmap(0, 0, fb->width, fb->height, (uint16_t*)fb->buf);
 
-    // Método alternativo para imprimir no LCD
-    // for (int y = 0; y < fb->height; y++) {
-    //     for (int x = 0; x < fb->width; x++) {
-    //         uint16_t pixel = ((uint16_t*)fb->buf)[y * fb->width + x];
-    //         lcd.draw_pixel(x, y, pixel);
-    //     }
-    // }
     esp_camera_fb_return(fb);
     return ESP_OK;
 }
@@ -193,13 +215,13 @@ void draw_box_number() {
     int box_size = 96;
 
     for (int x = x_initial; x < x_initial + box_size; x++) {
-        lcd.draw_pixel(x, y_initial, 65535);
-        lcd.draw_pixel(x, y_initial + box_size, 65535);
+        lcd.draw_pixel(x, y_initial, COR_BOX);
+        lcd.draw_pixel(x, y_initial + box_size, COR_BOX);
     }
 
     for (int y = y_initial; y < y_initial + box_size; y++) {
-        lcd.draw_pixel(x_initial, y, 65535);
-        lcd.draw_pixel(x_initial + box_size, y, 65535);
+        lcd.draw_pixel(x_initial, y, COR_BOX);
+        lcd.draw_pixel(x_initial + box_size, y, COR_BOX);
     }
 }
 
@@ -256,7 +278,6 @@ void predictData() {
                           0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
   int64_t start = esp_timer_get_time();
-  printf("1 \n");  
   while ((entry = readdir(dir)) != NULL) {
     snprintf(image_file, 30, "%s/%s", test_dir, entry->d_name);
     printf("\nFile: %s\n", image_file);
@@ -268,17 +289,12 @@ void predictData() {
     // prediction = predict(interpreter, float_image_32_data, squeeze_image_size);
 
     // Other models use 28 x 28 images
-    printf("2 \n");  
     preprocessImageData(image_data, lenet_image_size, float_image_data);
-    printf("3 \n");  
     prediction = predict(interpreter, float_image_data, lenet_image_size);
-    printf("4 \n");  
 
-    // printf("Prediction: %i\n", entry->d_name, prediction);
+    printf("Prediction: %i\n", entry->d_name, prediction);
     include_prediction_in_confusion_matrix(predictions, entry->d_name, prediction);
-    printf("5 \n");  
     updateProgressBar(file_number++, number_of_files);
-    printf("6 \n");  
   }
 
   int64_t stop = esp_timer_get_time();
@@ -294,10 +310,10 @@ void predictData() {
   free(float_image_32_data);
 
   // Close the directory
-  closedir(dir);
-  printf("\nTest dir closed\n\n");
+//   closedir(dir);
+//   printf("\nTest dir closed\n\n");
 
-  delay(60000);
+  delay(10000);
 }
 
 void setup() {
@@ -316,8 +332,8 @@ void setup() {
         printf("Falha ao carregar SDCard\n");
     }
 
-    char model_file[31] = "/spiffs/LeNet5.tflite";
-    interpreter = initializeInterpreter(model_file, model, resolver, tensor_arena_size, tensor_arena);
+    // char model_file[31] = "/spiffs/cnn.tflite";
+    // interpreter = initializeInterpreter(model_file, model, resolver, tensor_arena_size, tensor_arena);
     print_available_memory();
 }
 
@@ -325,6 +341,6 @@ void loop() {
     camera_capture();
     draw_box_number();
     delay(1000);
-    predictData();
-    delay(1000);
+    // predictData();
+    // delay(1000);
 }

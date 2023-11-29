@@ -12,6 +12,21 @@ int clk = 39;
 int cmd = 38;
 int d0  = 40;
 
+void writeFile(fs::FS &fs, const char * path, const char * message){
+    Serial.printf("Writing file: %s\n", path);
+
+    File file = fs.open(path, FILE_WRITE);
+    if(!file){
+        Serial.println("Failed to open file for writing");
+        return;
+    }
+    if(file.print(message)){
+        Serial.println("File written");
+    } else {
+        Serial.println("Write failed");
+    }
+}
+
 bool init_sd_card() {
     if(!SD_MMC.setPins(clk, cmd, d0)){
         printf("Pin change failed!\n");
@@ -42,6 +57,8 @@ bool init_sd_card() {
 
     uint64_t cardSize = SD_MMC.cardSize() / (1024 * 1024);
     printf("SD_MMC Card Size: %lluMB\n", cardSize);
+
+    writeFile(SD_MMC, "/hello.txt", "Hello ");
     return true;
 }
 
